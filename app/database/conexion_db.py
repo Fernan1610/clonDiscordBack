@@ -9,7 +9,7 @@ def connection_db():
         mydb = mysql.connector.connect(
             host="localhost",
             user="root",
-            passwd="1234",
+            passwd="Fredi001",
             database="clon_discord"
         )
         if mydb:

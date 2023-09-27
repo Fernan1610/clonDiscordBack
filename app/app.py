@@ -11,13 +11,22 @@ from classes.usuario_servidor import UsuarioServidor
 from middleware.errorHandler import CustomException
 import json
 from flask_cors import CORS
+from flask_session import Session
+
 app = Flask(__name__)
 socketio = SocketIO(app)
 app.secret_key = '97110c78ae51a45af397be6534caef90ebb9b1dcb3380af008f90b23a5d1616bf19bc29098105da20fe'
-CORS(app,resources={r"/*":{"origins":"http://127.0.0.1:5500/","methods":["GET","POST"]}})
+CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
+# app.config['SESSION_TYPE'] = 'filesystem'
+# Session(app)
 
+
+@app.route("/socket.io/")
+def socket_io():
+    return "Hello, world!"
 
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# ZONA USUARIO
+
 
 """PAGINA DE INICIO"""
 
@@ -37,7 +46,7 @@ def inicio():
 def login_user():
     try:
         if 'conectado' in session:
-            return render_template('public/chat/chatinicio.html', dataLogin=User.data_login_sesion("", session))
+            return render_template('public/chat/chatinicio.html')
         else:
             if request.method == 'POST':
                 data = request.get_json()
@@ -57,14 +66,9 @@ def login_user():
                         session['avatar'] = None
                         session['create_at'] = account['create_at']
                         session['fecha_nacimiento'] = account['fecha_nacimiento']
+                        session.permanent = True
                         data_login = User.data_login_sesion("", session)
-                        print(data_login)
                         return jsonify(data_login)
-                        # return render_template('public/chat/chatinicio.html', dataLogin=User.data_login_sesion("", session))
-                    else:
-                        return render_template('public/modulo_login/Login_base.html')
-                else:
-                    return render_template('public/modulo_login/Login_base.html')
         return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al intentar loguearse", e.args)
@@ -116,8 +120,8 @@ def register_user():
 @app.route('/actualizar-mi-perfil', methods=['POST'])
 def actualizar_perfil():
     try:
-        id = session['id']
-        if 'conectado' in session:
+        id = request.form['idLogin']
+        if id:
             if request.method == 'POST':
                 nombre = request.form['nombre']
                 apellido = request.form['apellido']
@@ -150,11 +154,13 @@ def actualizar_perfil():
         return error.get_response()
 
 
-@app.route('/get-foto-profile', methods=['GET'])
+@app.route('/get-foto-profile', methods=['POST'])
 def get_foto_profile():
     try:
-        if 'conectado' in session:
-            avatar = User.get_imagen_perfil("", session['id'])
+        data = request.get_json()
+        if data:
+            id = data.get('idLogin', '')
+            avatar = User.get_imagen_perfil("", id)
             content_type = 'image/jpeg'
             return Response(avatar['avatar'], mimetype=content_type)
         return render_template('public/modulo_login/Login_base.html')
@@ -222,7 +228,7 @@ def chatinicio():
 @app.route('/get_messages/<uuid:channel_id>')
 def get_messages(channel_id):
     try:
-        if 'conectado' in session:
+        if channel_id:
             messages = lista_mensajes_chat(channel_id)
             return jsonify(messages)
         return render_template('public/modulo_login/Login_base.html')
@@ -240,7 +246,7 @@ def get_messages(channel_id):
 @app.route('/get_channels/<uuid:server_id>', methods=['GET'])
 def get_channels(server_id):
     try:
-        if 'conectado' in session:
+        if server_id:
             channels = Canal.get_canales("", server_id)
             return jsonify(channels)
         return render_template('public/modulo_login/Login_base.html')
@@ -252,7 +258,7 @@ def get_channels(server_id):
 @app.route('/get_serverName/<uuid:server_id>', methods=['GET'])
 def get_server_name(server_id):
     try:
-        if 'conectado' in session:
+        if server_id:
             channels = Canal.get_nameServidor("", server_id)
             return jsonify(channels)
         return render_template('public/modulo_login/Login_base.html')
@@ -265,8 +271,8 @@ def get_server_name(server_id):
 @app.route('/delete_channel', methods=['POST'])
 def delete_channel():
     try:
-        if 'conectado' in session:
-            data = request.get_json()
+        data = request.get_json()
+        if data:
             channel_id = data.get('channel_id', '')
             server_id = data.get('server_id', '')
             chat_delete = Chat.delete_msg_by_channel_id("", channel_id)
@@ -287,8 +293,8 @@ def delete_channel():
 @app.route("/createChanel", methods=['POST'])
 def create_chanel():
     try:
-        if 'conectado' in session and request.method == 'POST':
-            data = request.get_json()
+        data = request.get_json()
+        if request.method == 'POST' and data:
             nombre_canal = data.get('nombre', '')
             id_servidor = data.get('serverId', '')
             creado = Canal.crear_canal("", nombre_canal, id_servidor, True)
@@ -322,17 +328,18 @@ def get_lista_paises():
 @app.route("/createServer", methods=['POST'])
 def create_server():
     try:
-        if request.method == 'POST' and 'conectado' in session:
+        if request.method == 'POST':
             nombre_servidor = request.form.get('nombre', '')
+            id_login = request.form.get('idLogin', '')
             # imagen = request.form.get('', None)
             Servidor.crear_servidor("", nombre_servidor, None, True)
             servidor = Servidor.get_servidor_by_nombre("", nombre_servidor)
             if (servidor != None):
                 usuario_serv = UsuarioServidor.insert_usuario_servidor(
-                    "", session['id'], servidor['id'], "administrador")
+                    "", id_login, servidor['id'], "administrador")
                 if (usuario_serv == 1):
                     servers = UsuarioServidor.get_usuario_servidor(
-                        "", session['id'])
+                        "", id_login)
                     if (servers):
                         return jsonify(servers)
         return render_template('public/modulo_login/Login_base.html')
@@ -344,13 +351,12 @@ def create_server():
 """TRAE LOS SERVIDORES POR USUARIO"""
 
 
-@app.route('/getServidoresByUsuario', methods=['GET'])
-def get_servidores_by_usuario():
+@app.route('/getServidoresByUsuario/<uuid:user_id>', methods=['GET'])
+def get_servidores_by_usuario(user_id):
     try:
-        if 'conectado' in session:
-            servers = UsuarioServidor.get_usuario_servidor("", session['id'])
+        if user_id:
+            servers = UsuarioServidor.get_usuario_servidor("", user_id)
             return jsonify(servers)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al traer los servidores", e.args)
         return error.get_response()
@@ -359,13 +365,12 @@ def get_servidores_by_usuario():
 """TRAE LOS SERVIDORES QUE NO LE PERTENECEN A UN USUARIO"""
 
 
-@app.route('/getListServers', methods=['GET'])
-def get_list_servers():
+@app.route('/getListServers/<uuid:user_id>', methods=['GET'])
+def get_list_servers(user_id):
     try:
-        if 'conectado' in session:
-            servers = UsuarioServidor.get_list_serv_dis_user("", session['id'])
+        if user_id:
+            servers = UsuarioServidor.get_list_serv_dis_user("", user_id)
             return jsonify(servers)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al traer los servidores", e.args)
         return error.get_response()
@@ -377,14 +382,15 @@ def get_list_servers():
 @app.route('/unirseServidor', methods=['POST'])
 def unirse_servidor():
     try:
-        if 'conectado' in session:
-            data = request.get_json()
+        data = request.get_json()
+        if data:
             servidor_id = data.get('serverId', '')
+            id_login = data.get('idLogin', '')
             usuario_serv = UsuarioServidor.insert_usuario_servidor(
-                "", session['id'], servidor_id, "invitado")
+                "", id_login, servidor_id, "invitado")
             if (usuario_serv == 1):
                 servers = UsuarioServidor.get_usuario_servidor(
-                    "", session['id'])
+                    "", id_login)
                 return jsonify(servers)
         return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
@@ -399,9 +405,10 @@ def unirse_servidor():
 @app.route('/eliminarServidor', methods=['POST'])
 def eliminar_servidor():
     try:
-        if 'conectado' in session:
-            data = request.get_json()
+        data = request.get_json()
+        if data:
             servidor_id = data.get('server_id', '')
+            id_login = data.get('idLogin', '')
             canales_list = Canal.get_canales("", servidor_id)
             for canal in canales_list:
                 canal_id = canal['id']
@@ -414,7 +421,7 @@ def eliminar_servidor():
                 delete_sev = Servidor.delete_servidor("", servidor_id)
                 if (delete_sev):
                     servers = UsuarioServidor.get_usuario_servidor(
-                        "", session['id'])
+                        "", id_login)
                     return jsonify(servers)
         return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
@@ -459,10 +466,10 @@ def handle_disconnect():
 @socketio.on('mensaje_chat')
 def recibir_mensaje(data):
     try:
-        if 'conectado' in session:
+        if data:
             mensaje_chat = data['mensaje']
             canal_id = data['canal_id']
-            usuario_id = session['id']
+            usuario_id = data['id_user']
             mensaje_insertado = Chat.insert_chat(
                 "", mensaje_chat, canal_id, usuario_id)
             cadena_json = json.dumps(mensaje_insertado)
@@ -479,7 +486,7 @@ def recibir_mensaje(data):
 @socketio.on('delete_mensaje')
 def delete_mensaje(data):
     try:
-        if 'conectado' in session:
+        if data:
             messages = Chat.delete_mensaje(
                 "", data['message_id'], data['canal_id'])
             cadena_json = json.dumps(messages)
@@ -496,8 +503,8 @@ def delete_mensaje(data):
 @socketio.on('update_mensaje')
 def update_message(data):
     try:
-        if 'conectado' in session:
-            user_id = session['id']
+        if data:
+            user_id = data['id_user']
             mensaje_id = data['mensaje_id']
             nuevo_mensaje = data['mensaje']
             channel_id = data['channel_id']
