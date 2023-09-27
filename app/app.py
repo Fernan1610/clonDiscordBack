@@ -10,9 +10,11 @@ from classes.servidores import Servidor
 from classes.usuario_servidor import UsuarioServidor
 from middleware.errorHandler import CustomException
 import json
+from flask_cors import CORS
 app = Flask(__name__)
 socketio = SocketIO(app)
 app.secret_key = '97110c78ae51a45af397be6534caef90ebb9b1dcb3380af008f90b23a5d1616bf19bc29098105da20fe'
+CORS(app,resources={r"/*":{"origins":"http://127.0.0.1:5500/","methods":["GET","POST"]}})
 
 
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# ZONA USUARIO
