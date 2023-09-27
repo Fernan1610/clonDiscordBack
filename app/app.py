@@ -14,9 +14,11 @@ from flask_cors import CORS
 from flask_session import Session
 
 app = Flask(__name__)
-socketio = SocketIO(app)
 app.secret_key = '97110c78ae51a45af397be6534caef90ebb9b1dcb3380af008f90b23a5d1616bf19bc29098105da20fe'
 CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
+CORS(app, resources={r"/socket.io/*": {"origins": "http://127.0.0.1:5100"}})
+socketio = SocketIO(app, cors_allowed_origins="*")
+
 # app.config['SESSION_TYPE'] = 'filesystem'
 # Session(app)
 
@@ -28,48 +30,32 @@ def socket_io():
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# ZONA USUARIO
 
 
-"""PAGINA DE INICIO"""
-
-
-@app.route('/')
-def inicio():
-    if 'conectado' in session:
-        return render_template('public/chat/chatinicio.html', dataLogin=User.data_login_sesion("", session))
-    else:
-        return render_template('public/modulo_login/Login_base.html')
-
-
 """LOGIN"""
 
 
 @app.route('/login_user', methods=['POST'])
 def login_user():
     try:
-        if 'conectado' in session:
-            return render_template('public/chat/chatinicio.html')
-        else:
-            if request.method == 'POST':
-                data = request.get_json()
-                email = data.get('email', '')
-                password = data.get('password', '')
-                account = User.user_exist("", email)
-                if account:
-                    if check_password_hash(account['password'], password):
-                        pais = Country.get_pais("", account['pais_id'])
-                        session['conectado'] = True
-                        session['id'] = account['id']
-                        session['nombre'] = account['nombre']
-                        session['apellido'] = account['apellido']
-                        session['email'] = account['email']
-                        session['sexo'] = account['sexo']
-                        session['pais'] = pais['name_country']
-                        session['avatar'] = None
-                        session['create_at'] = account['create_at']
-                        session['fecha_nacimiento'] = account['fecha_nacimiento']
-                        session.permanent = True
-                        data_login = User.data_login_sesion("", session)
-                        return jsonify(data_login)
-        return render_template('public/modulo_login/Login_base.html')
+        if request.method == 'POST':
+            data = request.get_json()
+            email = data.get('email', '')
+            password = data.get('password', '')
+            account = User.user_exist("", email)
+            if account and check_password_hash(account['password'], password):
+                pais = Country.get_pais("", account['pais_id'])
+                session['conectado'] = True
+                session['id'] = account['idLogin']
+                session['nombre'] = account['nombre']
+                session['apellido'] = account['apellido']
+                session['email'] = account['email']
+                session['sexo'] = account['sexo']
+                session['pais'] = pais['name_country']
+                session['avatar'] = None
+                session['create_at'] = account['create_at']
+                session['fecha_nacimiento'] = account['fecha_nacimiento']
+                session.permanent = True
+                data_login = User.data_login_sesion("", session)
+                return jsonify(data_login)
     except Exception as e:
         error = CustomException(500, "Error al intentar loguearse", e.args)
         return error.get_response()
@@ -102,7 +88,6 @@ def register_user():
             elif not email or not password or not password or not repite_password:
                 msg = 'El formulario no debe estar vacio!'
             else:
-                # La cuenta no existe y los datos del formulario son válidos,
                 User.create_user("", nombre, apellido, email,
                                  password, sexo, pais, None, fecha_nacimiento)
                 msg = 'Cuenta creada correctamente!'
@@ -129,21 +114,21 @@ def actualizar_perfil():
                 sexo = request.form['sexo']
                 pais = str(request.form['pais_id'])
                 imagen = request.files['imagen']
+                fecha_nacimiento = request.form['fecha_nacimiento']
                 update = False
                 if (request.form['password']):
                     password = request.form['password']
                     repite_password = request.form['repite_password']
-
                     if password != repite_password:
                         error = CustomException(
                             400, "Las contraseñas no coinciden", "Las contraseñas no coinciden")
                         return error.get_response()
                     else:
                         update = User.update_profile_with_password(
-                            "", nombre, apellido, email, password, sexo, pais, imagen, session['fecha_nacimiento'], id)
+                            "", nombre, apellido, email, password, sexo, pais, imagen, fecha_nacimiento, id)
                 else:
                     update = User.update_profile_out_password("",
-                                                              nombre, apellido, email, sexo, pais, imagen, session['fecha_nacimiento'], id)
+                                                              nombre, apellido, email, sexo, pais, imagen, fecha_nacimiento, id)
                 if (update):
                     update_user = User.user_exist("", email)
                     return jsonify(update_user)
@@ -163,7 +148,6 @@ def get_foto_profile():
             avatar = User.get_imagen_perfil("", id)
             content_type = 'image/jpeg'
             return Response(avatar['avatar'], mimetype=content_type)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al intentar guardar", e.args)
         return error.get_response()
@@ -180,7 +164,6 @@ def edit_profile():
             pais = Country.get_pais("", data_user['pais_id'])
             session['pais'] = pais['name_country']
             return render_template('public/dashboard/home.html')
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al intentar guardar", e.args)
         return error.get_response()
@@ -211,17 +194,6 @@ def not_found(error):
 # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# ZONA CHAT
 
 
-"""CHAT VISTA PRINCIPAL"""
-
-
-@app.route('/chatinicio', methods=['GET', 'POST'])
-def chatinicio():
-    if 'conectado' in session:
-        return render_template('public/chat/chatinicio.html', dataLogin=User.data_login_sesion("", session))
-    else:
-        return render_template('public/modulo_login/Login_base.html')
-
-
 """TRAE LOS MENSAJES"""
 
 
@@ -231,7 +203,6 @@ def get_messages(channel_id):
         if channel_id:
             messages = lista_mensajes_chat(channel_id)
             return jsonify(messages)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al traer los mensajes", e.args)
         return error.get_response()
@@ -249,7 +220,6 @@ def get_channels(server_id):
         if server_id:
             channels = Canal.get_canales("", server_id)
             return jsonify(channels)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al traer los canales", e.args)
         return error.get_response()
@@ -261,7 +231,6 @@ def get_server_name(server_id):
         if server_id:
             channels = Canal.get_nameServidor("", server_id)
             return jsonify(channels)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(
             500, "Error al traer el nombre del servidor", e.args)
@@ -281,7 +250,6 @@ def delete_channel():
                 if (canal_delete):
                     canales = Canal.get_canales("", server_id)
                     return jsonify(canales)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al traer los canales", e.args)
         return error.get_response()
@@ -301,7 +269,6 @@ def create_chanel():
             if (creado):
                 channels = Canal.get_canales("", id_servidor)
                 return jsonify(channels)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al crear el canal", e.args)
         return error.get_response()
@@ -342,7 +309,6 @@ def create_server():
                         "", id_login)
                     if (servers):
                         return jsonify(servers)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al crear el servidor", e.args)
         return error.get_response()
@@ -392,7 +358,6 @@ def unirse_servidor():
                 servers = UsuarioServidor.get_usuario_servidor(
                     "", id_login)
                 return jsonify(servers)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(
             500, "Error al traer de unirse al servidor", e.args)
@@ -423,7 +388,6 @@ def eliminar_servidor():
                     servers = UsuarioServidor.get_usuario_servidor(
                         "", id_login)
                     return jsonify(servers)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(
             500, "Error al traer de unirse al servidor", e.args)
@@ -474,7 +438,6 @@ def recibir_mensaje(data):
                 "", mensaje_chat, canal_id, usuario_id)
             cadena_json = json.dumps(mensaje_insertado)
             emit('mensaje_chat', cadena_json, broadcast=True)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al enviar el mensaje", e.args)
         return error.get_response()
@@ -491,7 +454,6 @@ def delete_mensaje(data):
                 "", data['message_id'], data['canal_id'])
             cadena_json = json.dumps(messages)
             emit('delete_mensaje', cadena_json, broadcast=True)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al eliminar el mensaje", e.args)
         return error.get_response()
@@ -512,7 +474,6 @@ def update_message(data):
                 "", nuevo_mensaje, mensaje_id, user_id, channel_id)
             cadena_json = json.dumps(messages)
             emit('update_mensaje', cadena_json, broadcast=True)
-        return render_template('public/modulo_login/Login_base.html')
     except Exception as e:
         error = CustomException(500, "Error al editar el mensaje", e.args)
         return error.get_response()

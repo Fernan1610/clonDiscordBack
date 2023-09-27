@@ -10,7 +10,7 @@ class User:
     def user_exist(self, email):
         try:
             query = (
-                f"SELECT id,nombre,apellido,email,sexo,create_at,fecha_nacimiento,pais_id,password FROM usuarios WHERE email = '{email}'")
+                f"SELECT id as idLogin,nombre,apellido,email,sexo,create_at,fecha_nacimiento,pais_id,password FROM usuarios WHERE email = '{email}'")
             return fetch_one(query)
         except mysql.connector.Error as e:
             print(f"ERROR user_exist: {e.args}")
