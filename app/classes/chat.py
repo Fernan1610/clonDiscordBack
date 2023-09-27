@@ -1,6 +1,5 @@
 from database.conexion_db import fetch_all, commint_db, execute_db
 import mysql.connector
-from flask import Flask, render_template, Markup
 
 
 class Chat:
